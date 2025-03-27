@@ -100,6 +100,15 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
             return logits, labels
 
         else:
+            
+            print(f"========== no_dpo_forward ===========")
+            print(f"========== input_ids: {input_ids.shape} ==========")
+            print(f"========== attention_mask: {attention_mask.shape} ==========")
+            print(f"========== position_ids: {position_ids.shape} ==========")
+            print(f"========== past_key_values: {past_key_values.shape} ==========")
+            print(f"========== inputs_embeds: {inputs_embeds.shape} ==========")
+            print(f"========== labels: {labels.shape} ==========")
+            
             return super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -137,6 +146,16 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
         images = kwargs.pop("images", None)
         image_sizes = kwargs.pop("image_sizes", None)
+        
+        print(f"========== prepare_inputs_for_generation ===========")
+        print(f"========== input_ids: {input_ids.shape} ==========")
+        print(f"========== past_key_values: {past_key_values.shape} ==========")
+        print(f"========== inputs_embeds: {inputs_embeds.shape} ==========")
+        print(f"========== kwargs: {kwargs} ==========")
+        
+        print(f"========== images: {images} ==========")
+        print(f"========== image_sizes: {image_sizes} ==========")
+        
         inputs = super().prepare_inputs_for_generation(input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs)
         if images is not None:
             inputs["images"] = images
