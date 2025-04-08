@@ -546,25 +546,33 @@ class SigLipVisionTower(nn.Module):
         self.vision_tower_name = vision_tower
 
         self.image_processor = SigLipImageProcessor()
+        
+        # print("=================================")
+        # print(f"SigLipVisionTower vision_tower: {vision_tower}")
+        # print(f"SigLipVisionTower vision_tower_cfg: {vision_tower_cfg}")
+        # print(f"SigLipVisionTower delay_load: {delay_load}")
+        # print("=================================")
 
         if not delay_load:
-            rank0_print(f"Loading vision tower: {vision_tower}")
+            print(f"Loading vision tower: {vision_tower}")
             self.load_model()
         elif getattr(vision_tower_cfg, "unfreeze_mm_vision_tower", False):
             # TODO: better detector is needed.
-            rank0_print(f"The checkpoint seems to contain `vision_tower` weights: `unfreeze_mm_vision_tower`: True.")
+            print(f"The checkpoint seems to contain `vision_tower` weights: `unfreeze_mm_vision_tower`: True.")
             self.load_model()
         elif hasattr(vision_tower_cfg, "mm_tunable_parts") and "mm_vision_tower" in vision_tower_cfg.mm_tunable_parts:
-            rank0_print(f"The checkpoint seems to contain `vision_tower` weights: `mm_tunable_parts` contains `mm_vision_tower`.")
+            print(f"The checkpoint seems to contain `vision_tower` weights: `mm_tunable_parts` contains `mm_vision_tower`.")
             self.load_model()
         else:
             self.cfg_only = self.config
 
     def load_model(self, device_map=None):
         if self.is_loaded:
-            rank0_print("{} is already loaded, `load_model` called again, skipping.".format(self.vision_tower_name))
+            print("{} is already loaded, `load_model` called again, skipping.".format(self.vision_tower_name))
             return
 
+        # self.vision_tower_name = "/root/autodl-tmp/model/siglip-so400m-patch14-384"
+        
         self.vision_tower = SigLipVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
 
         del self.vision_tower.vision_model.encoder.layers[-1:]
@@ -579,15 +587,15 @@ class SigLipVisionTower(nn.Module):
             for image in images:
                 image_forward_out = self.vision_tower(image.to(device=self.device, dtype=self.dtype).unsqueeze(0), output_hidden_states=True)
                 image_feature = image_forward_out.hidden_states[-1].to(image.dtype)
-                rank0_print(f"========== vision_tower_image_all_features: {image_forward_out.shape} ==========")
-                rank0_print(f"========== vision_tower_image_feature: {image_feature.shape} ==========")
+                # print(f"========== vision_tower_image_all_features: {image_forward_out.shape} ==========")
+                # print(f"========== vision_tower_image_feature: {image_feature.shape} ==========")
                 assert image_features.shape[-2] == 729
                 image_features.append(image_feature)
         else:
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
             image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
-            rank0_print(f"========== vision_tower_image_all_features: {image_forward_outs.shape} ==========")
-            rank0_print(f"========== vision_tower_image_feature: {image_features.shape} ==========")
+            # print(f"========== vision_tower_image_all_features: {image_features.shape} ==========")
+            # print(f"========== vision_tower_image_feature: {image_features.shape} ==========")
             assert image_features.shape[-2] == 729
 
         return image_features

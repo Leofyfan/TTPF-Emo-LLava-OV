@@ -29,6 +29,7 @@ from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH
 from llava.mm_utils import get_anyres_image_grid_shape
 from llava.utils import rank0_print, rank_print
 import random
+import numpy as np
 
 
 class LlavaMetaModel:
@@ -38,6 +39,7 @@ class LlavaMetaModel:
 
         if hasattr(config, "mm_vision_tower"):
             delay_load = getattr(config, "delay_load", False)
+            # print(f"config: {config}")
             self.vision_tower = build_vision_tower(config, delay_load=delay_load)
             self.vision_resampler = build_vision_resampler(config, vision_tower=self.vision_tower)
             self.mm_projector = build_vision_projector(config, vision_cfg=self.vision_tower.config)
@@ -60,6 +62,14 @@ class LlavaMetaModel:
 
         self.config.mm_vision_tower = vision_tower
         self.config.vision_tower_pretrained = getattr(model_args, "vision_tower_pretrained", "")
+        
+        # print("============================")
+        # print(f"vision_tower: {vision_tower}")
+        # print(f"mm_vision_select_layer: {mm_vision_select_layer}")
+        # print(f"mm_vision_select_feature: {mm_vision_select_feature}")
+        # print(f"pretrain_mm_mlp_adapter: {pretrain_mm_mlp_adapter}")
+        # print(f"mm_patch_merge_type: {mm_patch_merge_type}")
+        # print("============================")
 
         if self.get_vision_tower() is None:
             vision_tower = build_vision_tower(model_args)
@@ -171,6 +181,9 @@ class LlavaMetaForCausalLM(ABC):
     def get_2dPool(self, image_feature, stride=2):
         height = width = self.get_vision_tower().num_patches_per_side
         num_frames, num_tokens, num_dim = image_feature.shape
+        rank0_print(f"image_feature.shape: {image_feature.shape}")
+        rank0_print(f"height: {height}  width: {width}")
+        rank0_print(f"self.config.mm_spatial_pool_mode: {self.config.mm_spatial_pool_mode}")
         image_feature = image_feature.view(num_frames, height, width, -1)
         image_feature = image_feature.permute(0, 3, 1, 2).contiguous()
         # image_feature = nn.functional.max_pool2d(image_feature, self.config.mm_spatial_pool_stride)
@@ -190,9 +203,15 @@ class LlavaMetaForCausalLM(ABC):
         return image_feature
 
     def encode_images(self, images):
+        # print("========= encode_images debug ===========")
+        # print(f"images: {images.shape}")
+        # print(f"self.get_model().get_vision_tower(): {self.get_model().get_vision_tower()}")
         image_features = self.get_model().get_vision_tower()(images)
         # image_features = self.get_model().vision_resampler(image_features, images=images)
+        print(f"vision tower image_features: {image_features.shape}")
+        mm_projector = self.get_model().mm_projector
         image_features = self.get_model().mm_projector(image_features)
+        print(f"project image_features: {image_features.shape}")
         return image_features
     
     def encode_multimodals(self, videos_or_images, video_idx_in_batch, split_sizes=None):
@@ -212,7 +231,9 @@ class LlavaMetaForCausalLM(ABC):
                 if self.config.add_faster_video:
                     cur_mm_spatial_pool_stride = cur_mm_spatial_pool_stride * 2
                     faster_video_feature = self.get_2dPool(feat,cur_mm_spatial_pool_stride)
-            if slower_img_feat is not 0:
+            # print("========= encode_multimodals debug ===========")
+            # print(slower_img_feat)
+            if slower_img_feat != 0:
                 all_videos_or_images_features.append(slower_img_feat)
             else:
                 all_videos_or_images_features.append(feat)
@@ -228,6 +249,7 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = image_feature.permute(4, 0, 2, 1, 3).contiguous()
         image_feature = image_feature.flatten(1, 2).flatten(2, 3)
         image_feature = torch.cat((image_feature, self.model.image_newline[:, None, None].expand(*image_feature.shape[:-1], 1).to(image_feature.device)), dim=-1)
+        
         if getattr(self.config, "add_faster_video", False):
             # import pdb; pdb.set_trace()
             # (3584, 832, 14) -> (3584, 64, 13, 14)
@@ -263,6 +285,7 @@ class LlavaMetaForCausalLM(ABC):
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
 
             video_idx_in_batch = []
+            # print(f"modalities: {modalities}")
             for _ in range(len(modalities)):
                 if modalities[_] == "video":
                     video_idx_in_batch.append(_)
@@ -273,19 +296,30 @@ class LlavaMetaForCausalLM(ABC):
                     images_list.append(image)
                 else:
                     images_list.append(image.unsqueeze(0))
+                    
+            print("============================= video debug ==================================")
+            
+            print(f"images_list: {len(images_list)}")
 
             concat_images = torch.cat([image for image in images_list], dim=0)
+            print(f"concat_images: {concat_images.shape}")
             split_sizes = [image.shape[0] for image in images_list]
+            print(f"split_sizes: {split_sizes}")
             encoded_image_features = self.encode_images(concat_images)
+            print(f"encoded_image_features: {encoded_image_features.shape}")
             # image_features,all_faster_video_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
 
             # This is a list, each element is [num_images, patch * patch, dim]
             # rank_print(f"Concat images : {concat_images.shape}")
             encoded_image_features = torch.split(encoded_image_features, split_sizes)
             image_features = []
+            
+            print(f"video_idx_in_batch: {video_idx_in_batch}")
             for idx, image_feat in enumerate(encoded_image_features):
                 if idx in video_idx_in_batch:
+                    # print(f"init_image_feat.shape: {image_feat.shape}")
                     image_features.append(self.get_2dPool(image_feat))
+                    # print(f"get2dPool_image_feat.shape: {self.get_2dPool(image_feat).shape}")
                 else:
                     image_features.append(image_feat)
             # image_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
@@ -294,6 +328,11 @@ class LlavaMetaForCausalLM(ABC):
             mm_patch_merge_type = getattr(self.config, "mm_patch_merge_type", "flat")
             image_aspect_ratio = getattr(self.config, "image_aspect_ratio", "square")
             mm_newline_position = getattr(self.config, "mm_newline_position", "one_token")
+            
+            # print(f"mm_patch_merge_type: {mm_patch_merge_type}")
+            # print(f"image_aspect_ration: {image_aspect_ratio}")
+            # print(f"mm_newline_position:: {mm_newline_position}")
+            
 
             if mm_patch_merge_type == "flat":
                 image_features = [x.flatten(0, 1) for x in image_features]
@@ -311,7 +350,10 @@ class LlavaMetaForCausalLM(ABC):
                         # rank0_print("Video")
                         if mm_newline_position == "grid":
                             # Grid-wise
+                            print("******************************************")
+                            print(f"image_feature_bef: {image_feature.shape}")
                             image_feature = self.add_token_per_grid(image_feature)
+                            print(f"image_feature_aft: {image_feature.shape}")
                             if getattr(self.config, "add_faster_video", False):
                                 faster_video_feature = self.add_token_per_grid(all_faster_video_features[image_idx])
                                 # Add a token for each frame
@@ -326,7 +368,9 @@ class LlavaMetaForCausalLM(ABC):
                                 image_feature = torch.cat(concat_slow_fater_token)
 
                                 # print("!!!!!!!!!!!!")
-                        
+
+                            print(f"image_feautre_grid: {image_feature.shape}")
+                            
                             new_image_features.append(image_feature)
                         elif mm_newline_position == "frame":
                             # Frame-wise
@@ -415,7 +459,10 @@ class LlavaMetaForCausalLM(ABC):
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
             image_features = self.encode_images(images)
-
+            
+        print(f"=========== end ===========")
+        print(f"len: {len(image_features)} video1_shape: {image_features[0].shape} video2_shape: {image_features[1].shape}")
+        
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, "tune_mm_mlp_adapter", False) and getattr(self.config, "mm_use_im_start_end", False):
             raise NotImplementedError
@@ -425,6 +472,8 @@ class LlavaMetaForCausalLM(ABC):
         # it is a headache to deal with None all the time.
         # But it is not ideal, and if you have a better idea,
         # please open an issue / submit a PR, thanks.
+        # print(f"image_features_length: {len(image_features)}  shape: {image_features[0].shape}")
+        
         _labels = labels
         _position_ids = position_ids
         _attention_mask = attention_mask
@@ -441,6 +490,10 @@ class LlavaMetaForCausalLM(ABC):
         _input_ids = input_ids
         input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
         labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
+        
+        # print(f"_input_ids: {_input_ids}")
+        # print(f"input_ids: {input_ids} len_input_ids: {len(input_ids)} input_ids_0_shape: {input_ids[0].shape}")
+        # print(f"labels: {labels} len_labels: {len(labels)}")
 
         new_input_embeds = []
         new_labels = []
@@ -459,17 +512,26 @@ class LlavaMetaForCausalLM(ABC):
                 continue
 
             image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+            # rank0_print(image_token_indices)
+            # rank0_print(torch.where(cur_input_ids == IMAGE_TOKEN_INDEX))
+            # rank0_print(cur_input_ids)
             cur_input_ids_noim = []
             cur_labels = labels[batch_idx]
             cur_labels_noim = []
             for i in range(len(image_token_indices) - 1):
                 cur_input_ids_noim.append(cur_input_ids[image_token_indices[i] + 1 : image_token_indices[i + 1]])
                 cur_labels_noim.append(cur_labels[image_token_indices[i] + 1 : image_token_indices[i + 1]])
+                # rank0_print(cur_input_ids_noim)
+                # rank0_print(cur_labels_noim)
             split_sizes = [x.shape[0] for x in cur_labels_noim]
+            # rank0_print(split_sizes)
             cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
             cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
             cur_new_input_embeds = []
             cur_new_labels = []
+            
+            # rank0_print(cur_input_embeds.shape)
+            # rank0_print(len(cur_input_embeds_no_im))
 
             for i in range(num_images + 1):
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
@@ -495,6 +557,10 @@ class LlavaMetaForCausalLM(ABC):
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, "tokenizer_model_max_length", None)
         # rank_print("Finishing Inserting")
+        
+        # rank0_print(tokenizer_model_max_length)
+        # for x, modality in zip(new_input_embeds, modalities):
+        #     print(f"=== ==== ==== x: {x.shape}")
 
         new_input_embeds = [x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
         new_labels = [x[:tokenizer_model_max_length] for x, modality in zip(new_labels, modalities)]
@@ -552,6 +618,12 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, split_position:] += right_add
         # import pdb; pdb.set_trace()
         # rank0_print("Finish preparing")
+        
+        # print(f"postion_ids: {position_ids}")
+        # print(f"attention_mask: {attention_mask}")
+        # print(f"past_key_values: {past_key_values}")
+        # print(f"new_input_embeds: {new_input_embeds.shape}")
+        # print(f"new_labels: {new_labels.shape}")
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):

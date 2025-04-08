@@ -3,7 +3,7 @@ import torch.nn as nn
 import re
 
 from .pooler_projector import PoolerProjector
-
+from .ttpf import VisionTTTProjector
 
 class IdentityMap(nn.Module):
     def __init__(self):
@@ -39,6 +39,9 @@ def build_vision_projector(config, delay_load=False, **kwargs):
 
     if projector_type == "pooler":
         return PoolerProjector(config, kwargs["vision_cfg"])
+    
+    if projector_type == "ttpf":
+        return VisionTTTProjector(config.mm_hidden_size, config.hidden_size)
 
     mlp_gelu_match = re.match(r"^mlp(\d+)x_gelu$", projector_type)
     if mlp_gelu_match:

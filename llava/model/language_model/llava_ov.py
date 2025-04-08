@@ -1,16 +1,5 @@
-#    Copyright 2024 Hao Zhang
-#
-#    Licensed under the Apache License, Version 2.0 (the "License");
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
+from transformers import LlavaOnevisionProcessor, LlavaOnevisionForConditionalGeneration
+
 
 
 from typing import List, Optional, Tuple, Union, Dict
@@ -28,8 +17,6 @@ from transformers.generation.utils import GenerateOutput
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 from transformers import Qwen2Config, Qwen2Model, Qwen2ForCausalLM
 
-# from .qwen.modeling_qwen import QWenLMHeadModel, QWenModel
-# from .qwen.configuration_qwen import QWenConfig
 
 
 class LlavaQwenConfig(Qwen2Config):
@@ -43,7 +30,7 @@ class LlavaQwenModel(LlavaMetaModel, Qwen2Model):
         super(LlavaQwenModel, self).__init__(config)
 
 
-class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
+class LlavaOVForCausalLM(LlavaOnevisionForConditionalGeneration, LlavaMetaForCausalLM):
     config_class = LlavaQwenConfig
 
     def __init__(self, config):
@@ -86,25 +73,15 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
-     
-            # print(f"input_ids: {input_ids}")
-            # print(f"position_ids: {position_ids}")
-            # print(f"attention_mask: {attention_mask}")
-            # print(f"past_key_values: {past_key_values}")
-            # print(f"labels: {labels}")
-            # print(f"modalities: {modalities}")
-            # print(f"images: {images}")
-            # print(f"image_sizes: {image_sizes}")
-
             (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
-            
-            # print(f"input_ids: {input_ids}")
-            # print(f"position_ids: {position_ids}")
-            # print(f"attention_mask: {attention_mask}")
-            # print(f"past_key_values: {past_key_values.size}")
-            # print(f"inputs_embeds: {inputs_embeds.size}")
-            # print(f"labels: {labels.size}")
-   
+
+        print(input_ids.shape)
+        print(position_ids.shape)
+        print(attention_mask.shape)
+        print(past_key_values.shape)
+        print(inputs_embeds.shape)
+        print(labels.shape)
+        
         if dpo_forward:
             outputs = self.model(
                 input_ids=input_ids,
@@ -124,7 +101,13 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
 
         else:
             
-
+            print(f"========== no_dpo_forward ===========")
+            print(f"========== input_ids: {input_ids.shape} ==========")
+            print(f"========== attention_mask: {attention_mask.shape} ==========")
+            print(f"========== position_ids: {position_ids.shape} ==========")
+            print(f"========== past_key_values: {past_key_values.shape} ==========")
+            print(f"========== inputs_embeds: {inputs_embeds.shape} ==========")
+            print(f"========== labels: {labels.shape} ==========")
             
             return super().forward(
                 input_ids=input_ids,
@@ -164,7 +147,14 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         images = kwargs.pop("images", None)
         image_sizes = kwargs.pop("image_sizes", None)
         
-
+        print(f"========== prepare_inputs_for_generation ===========")
+        print(f"========== input_ids: {input_ids.shape} ==========")
+        print(f"========== past_key_values: {past_key_values.shape} ==========")
+        print(f"========== inputs_embeds: {inputs_embeds.shape} ==========")
+        print(f"========== kwargs: {kwargs} ==========")
+        
+        print(f"========== images: {images} ==========")
+        print(f"========== image_sizes: {image_sizes} ==========")
         
         inputs = super().prepare_inputs_for_generation(input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs)
         if images is not None:
