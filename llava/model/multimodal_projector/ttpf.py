@@ -1,5 +1,5 @@
 import torch
-from .ttt import TTTConfig, TTTLinear
+from .ttt import TTTConfig, TTTLinear, TTTMLP
 import torch.nn as nn
 
 
@@ -21,17 +21,17 @@ class VisionTTTProjector(nn.Module):
             num_hidden_layers=2,       
             num_attention_heads=6,     
             max_position_embeddings=2048,
-            ttt_layer_type="linear",    
-            ttt_base_lr=0.1,         
-            mini_batch_size=6,       
-            use_gate=False,       
-            share_qk=False,  
+            ttt_layer_type="mlp",    
+            ttt_base_lr=1e-1,         
+            mini_batch_size=27,       
+            use_gate=True,       
+            bidirectional=True,  
             output_proj_dim = self.output_proj_dim   
         )
         return ttt_config
         
     def _get_ttt_layer(self):
-        return TTTLinear(self.ttt_config, self.layer_idx)
+        return TTTMLP(self.ttt_config, self.layer_idx)
     
     def forward(self, x):
         batch_size, seq_len, _ = x.shape

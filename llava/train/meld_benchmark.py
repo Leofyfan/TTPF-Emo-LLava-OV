@@ -14,9 +14,10 @@ from llava.model.builder import load_pretrained_model
 from llava.mm_utils import tokenizer_image_token
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 from llava.conversation import conv_templates
+import time
 
 
-def set_seed(seed=724):
+def set_seed(seed=42):
     """设置所有随机种子以确保可重复性"""
     random.seed(seed)
     np.random.seed(seed)
@@ -35,9 +36,9 @@ class MELDBenchmark:
                  model_name="llava_qwen", 
                  device="cuda",
                  device_map="auto",
-                 data_path="/root/autodl-tmp/data/meld_data/MELD.Raw/meld_test_standard.json",
+                 data_path="/root/autodl-tmp/data/meld_data/MELD.Raw/meld_test_standard_shuffled_part.json",
                  base_video_path="/root/autodl-tmp/data/meld_data/MELD.Raw/",
-                 seed=724):
+                 seed=42):
         # 设置随机种子
         set_seed(seed)
         
@@ -67,28 +68,29 @@ class MELDBenchmark:
         llava_model_args = {"multimodal": True}
         self.tokenizer, self.model, self.image_processor, self.max_length = load_pretrained_model(
             self.base_model_path, None, self.model_name, device_map=self.device_map, 
-            attn_implementation="sdpa", **llava_model_args
+            attn_implementation="flash_attention_2", **llava_model_args
         )
         # 加载微调后的projector权重
-        print("loading projector weight...")
-        projector_weights = torch.load(self.reload_proj_path, map_location="cpu")
+        if self.reload_proj_path is not None:
+            print("loading projector weight...")
+            projector_weights = torch.load(self.reload_proj_path, map_location="cpu")
 
-        # 更新模型权重
-        missing_keys = []
-        filtered_weights = {}
-        for k, v in projector_weights.items():
-            # print(f"existing: {k}")
-            if k in self.model.state_dict():
-                # print(f"loading {k}")
-                filtered_weights[k] = v.to(torch.float16)
-            else:
-                missing_keys.append(k)
-                
-        # 加载过滤后的权重
-        self.model.load_state_dict(filtered_weights, strict=False)
-        print(f"successfully loading {len(filtered_weights)} weights")
-        if missing_keys:
-            print(f"failure loading num: {len(missing_keys)}")
+            # 更新模型权重
+            missing_keys = []
+            filtered_weights = {}
+            for k, v in projector_weights.items():
+                # print(f"existing: {k}")
+                if k in self.model.state_dict():
+                    # print(f"loading {k}")
+                    filtered_weights[k] = v.to(torch.float16)
+                else:
+                    missing_keys.append(k)
+                    
+            # 加载过滤后的权重
+            self.model.load_state_dict(filtered_weights, strict=False, assign=True)
+            print(f"successfully loading {len(filtered_weights)} weights")
+            if missing_keys:
+                print(f"failure loading num: {len(missing_keys)}")
             
         self.model.eval()
     
@@ -203,11 +205,19 @@ class MELDBenchmark:
             
             try:
                 # 加载视频
+                start_load_video = time.time()
                 video_frames = self.load_video(video_path)
+                end_load_video = time.time()
+                print(f"load video using {end_load_video - start_load_video} s")
                 
                 # 处理视频帧
+                start_image_processor = time.time()
+
                 frames = self.image_processor.preprocess(video_frames, return_tensors="pt")["pixel_values"].half().cuda()
                 image_tensors = [frames]
+                
+                end_image_processor = time.time()
+                print(f"image_processor video using {end_image_processor - start_image_processor} s")
                 
                 # 准备会话输入
                 conv_template = "qwen_1_5"
@@ -225,6 +235,9 @@ class MELDBenchmark:
                 torch.manual_seed(self.seed)
                 torch.cuda.manual_seed(self.seed)
                 
+                start_generate = time.time()
+
+                
                 # 生成回答
                 with torch.no_grad():
                     cont = self.model.generate(
@@ -236,6 +249,9 @@ class MELDBenchmark:
                         max_new_tokens=4096,
                         modalities=["video"],
                     )
+                    
+                end_generate = time.time()
+                print(f"generate video using {end_generate - start_generate} s")
                 
                 text_output = self.tokenizer.batch_decode(cont, skip_special_tokens=True)[0]
                 
@@ -302,16 +318,18 @@ class MELDBenchmark:
 if __name__ == "__main__":
     # 命令行参数解析
     parser = argparse.ArgumentParser(description='MELD基准测试评估')
-    parser.add_argument('--reload_proj_path', type=str, required=True, 
+    parser.add_argument('--reload_proj_path', type=str, default=None, 
                         help='微调后的projector权重路径')
+    parser.add_argument('--base_model_path', type=str, required=True, 
+                        help='基础模型路径')
     parser.add_argument('--output_file', type=str, 
-                        default="/root/project/llava/TTPF-Emo-LLava-OV/eval/meld_test_results.json",
+                        default="/root/project/llava/TTPF-Emo-LLava-OV/eval/results/meld_test_results.json",
                         help='结果输出文件路径')
     args = parser.parse_args()
     
     # 设置全局随机种子
-    set_seed(724)
+    set_seed(42)
     
-    benchmark = MELDBenchmark(seed=724, reload_proj_path=args.reload_proj_path)
+    benchmark = MELDBenchmark(seed=42, reload_proj_path=args.reload_proj_path, base_model_path=args.base_model_path)
     benchmark.evaluate()
     benchmark.save_results(output_file=args.output_file)

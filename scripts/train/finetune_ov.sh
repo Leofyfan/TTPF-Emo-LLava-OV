@@ -86,7 +86,7 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 ############### Pretrain ################
 
-BASE_RUN_NAME="llavaov_finetune"
+BASE_RUN_NAME="llava_ov_lora_allparts_random20"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
 ############### Finetune ################
@@ -101,14 +101,18 @@ echo "MID_RUN_NAME: ${RUN_NAME}"
 # 设置实际可用的GPU数量
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)  # 自动检测可用GPU数量
 
+# --lora_enable True\
+
+
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node=${NUM_GPUS} \
     llava/train/train_mem.py \
+    --lora_enable True \
     --deepspeed scripts/zero2.json \
     --model_name_or_path $PREV_STAGE_CHECKPOINT \
     --version $PROMPT_VERSION \
     --data_path /root/autodl-tmp/data/llavaov_finetune.yaml \
     --video_folder /root/autodl-tmp/data/meld_data/MELD.Raw \
-    --mm_tunable_parts="mm_mlp_adapter" \
+    --mm_tunable_parts="mm_vision_tower, mm_mlp_adapter, mm_language_model" \
     --mm_vision_tower_lr=2e-6 \
     --vision_tower ${VISION_MODEL_VERSION} \
     --mm_projector_type ttpf \
@@ -123,12 +127,12 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node=${NUM_GPUS} \
     --run_name $RUN_NAME \
     --output_dir /root/autodl-tmp/model/mnt/llava-ov-checkpoints/$RUN_NAME \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 2 \
-    --per_device_eval_batch_size 2 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 2 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 100 \
+    --save_steps 500 \
     --save_total_limit 1 \
     --learning_rate 1e-5 \
     --weight_decay 0. \
@@ -138,14 +142,87 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node=${NUM_GPUS} \
     --tf32 True \
     --model_max_length 32768 \
     --gradient_checkpointing True \
-    --dataloader_num_workers 4 \
+    --dataloader_num_workers 8 \
     --lazy_preprocess True \
     --report_to wandb \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
     --frames_upbound 32 \
-    --attn_implementation "sdpa"
+    --attn_implementation "flash_attention_2"
 exit 0;
 
 
+
+
+# export OMP_NUM_THREADS=8
+# export NCCL_IB_DISABLE=0
+# export NCCL_IB_GID_INDEX=3
+# export NCCL_SOCKET_IFNAME=eth0
+# export NCCL_DEBUG=INFO
+
+# LLM_VERSION="/root/autodl-tmp/model/llava-onevision-qwen2-0.5b-ov" 
+# LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
+# VISION_MODEL_VERSION="/root/autodl-tmp/model/siglip-so400m-patch14-384"
+# VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
+
+# BASE_RUN_NAME="llavaov_finetune"
+# echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
+
+# ############### Finetune ################
+
+# # Stage 2
+# PROMPT_VERSION="qwen_1_5"
+# TIMESTAMP=$(date "+%Y%m%d_%H%M%S")
+# RUN_NAME="${BASE_RUN_NAME}_meld_data_${TIMESTAMP}" 
+# PREV_STAGE_CHECKPOINT="/root/autodl-tmp/model/llava-onevision-qwen2-0.5b-ov"
+# echo "PREV_STAGE_CHECKPOINT: ${PREV_STAGE_CHECKPOINT}"
+# echo "MID_RUN_NAME: ${RUN_NAME}"
+
+# NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)  # 自动检测可用GPU数量
+
+# ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" \
+#     llava/train/train_mem.py \
+#     --deepspeed scripts/zero2.json \
+#     --model_name_or_path $PREV_STAGE_CHECKPOINT \
+#     --version $PROMPT_VERSION \
+#     --data_path /root/autodl-tmp/data/llavaov_finetune.yaml \
+#     --video_folder /root/autodl-tmp/data/meld_data/MELD.Raw \
+#     --mm_tunable_parts="mm_vision_tower,mm_mlp_adapter,mm_language_model" \
+#     --mm_vision_tower_lr=2e-6 \
+#     --vision_tower ${VISION_MODEL_VERSION} \
+#     --mm_projector_type ttpf \
+#     --mm_vision_select_layer -2 \
+#     --mm_use_im_start_end False \
+#     --mm_use_im_patch_token False \
+#     --group_by_modality_length True \
+#     --image_aspect_ratio anyres_max_9 \
+#     --image_grid_pinpoints  "(1x1),...,(6x6)" \
+#     --mm_patch_merge_type spatial_unpad \
+#     --bf16 True \
+#     --run_name $RUN_NAME \
+#     --output_dir /root/autodl-tmp/model/mnt/llava-ov-checkpoints/$RUN_NAME \
+#     --num_train_epochs 1 \
+#     --per_device_train_batch_size 1 \
+#     --per_device_eval_batch_size 1 \
+#     --gradient_accumulation_steps 2 \
+#     --evaluation_strategy "no" \
+#     --save_strategy "steps" \
+#     --save_steps 500 \
+#     --save_total_limit 1 \
+#     --learning_rate 1e-5 \
+#     --weight_decay 0. \
+#     --warmup_ratio 0.03 \
+#     --lr_scheduler_type "cosine" \
+#     --logging_steps 1 \
+#     --tf32 True \
+#     --model_max_length 32768 \
+#     --gradient_checkpointing True \
+#     --dataloader_num_workers 4 \
+#     --lazy_preprocess True \
+#     --report_to wandb \
+#     --torch_compile True \
+#     --torch_compile_backend "inductor" \
+#     --dataloader_drop_last True \
+#     --frames_upbound 32
+# exit 0;

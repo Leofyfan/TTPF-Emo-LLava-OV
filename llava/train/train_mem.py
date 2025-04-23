@@ -4,7 +4,7 @@ import torch
 import os
 import random
 
-def set_seed(seed=724):
+def set_seed(seed=42):
     """random seed"""
     random.seed(seed)
     np.random.seed(seed)
@@ -18,5 +18,5 @@ def set_seed(seed=724):
 
 
 if __name__ == "__main__":
-    set_seed(724)
+    set_seed(42)
     train()

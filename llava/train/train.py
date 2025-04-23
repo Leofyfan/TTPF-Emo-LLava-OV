@@ -67,7 +67,7 @@ class ModelArguments:
 
     version: Optional[str] = field(default="v0")
     freeze_backbone: bool = field(default=False)
-    tune_mm_mlp_adapter: bool = field(default=False)
+    tune_mm_mlp_adapter: bool = field(default=True)
     tune_mm_vision_resampler: bool = field(default=False)
     vision_tower: Optional[str] = field(default=None)
     vision_tower_pretrained: Optional[str] = field(default=None)  # default to the last layer

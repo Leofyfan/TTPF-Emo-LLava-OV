@@ -181,9 +181,9 @@ class LlavaMetaForCausalLM(ABC):
     def get_2dPool(self, image_feature, stride=2):
         height = width = self.get_vision_tower().num_patches_per_side
         num_frames, num_tokens, num_dim = image_feature.shape
-        rank0_print(f"image_feature.shape: {image_feature.shape}")
-        rank0_print(f"height: {height}  width: {width}")
-        rank0_print(f"self.config.mm_spatial_pool_mode: {self.config.mm_spatial_pool_mode}")
+        # rank0_print(f"image_feature.shape: {image_feature.shape}")
+        # rank0_print(f"height: {height}  width: {width}")
+        # rank0_print(f"self.config.mm_spatial_pool_mode: {self.config.mm_spatial_pool_mode}")
         image_feature = image_feature.view(num_frames, height, width, -1)
         image_feature = image_feature.permute(0, 3, 1, 2).contiguous()
         # image_feature = nn.functional.max_pool2d(image_feature, self.config.mm_spatial_pool_stride)
@@ -208,10 +208,13 @@ class LlavaMetaForCausalLM(ABC):
         # print(f"self.get_model().get_vision_tower(): {self.get_model().get_vision_tower()}")
         image_features = self.get_model().get_vision_tower()(images)
         # image_features = self.get_model().vision_resampler(image_features, images=images)
-        print(f"vision tower image_features: {image_features.shape}")
+        # print(f"vision tower image_features: {image_features.shape}")
         mm_projector = self.get_model().mm_projector
+        # time1 = time.time()
         image_features = self.get_model().mm_projector(image_features)
-        print(f"project image_features: {image_features.shape}")
+        # time2 = time.time()
+        # print(f"projector using {time2 - time1} s")
+        # print(f"project image_features: {image_features.shape}")
         return image_features
     
     def encode_multimodals(self, videos_or_images, video_idx_in_batch, split_sizes=None):
@@ -297,16 +300,16 @@ class LlavaMetaForCausalLM(ABC):
                 else:
                     images_list.append(image.unsqueeze(0))
                     
-            print("============================= video debug ==================================")
+            # print("============================= video debug ==================================")
             
-            print(f"images_list: {len(images_list)}")
+            # print(f"images_list: {len(images_list)}")
 
             concat_images = torch.cat([image for image in images_list], dim=0)
-            print(f"concat_images: {concat_images.shape}")
+            # print(f"concat_images: {concat_images.shape}")
             split_sizes = [image.shape[0] for image in images_list]
-            print(f"split_sizes: {split_sizes}")
+            # print(f"split_sizes: {split_sizes}")
             encoded_image_features = self.encode_images(concat_images)
-            print(f"encoded_image_features: {encoded_image_features.shape}")
+            # print(f"encoded_image_features: {encoded_image_features.shape}")
             # image_features,all_faster_video_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
 
             # This is a list, each element is [num_images, patch * patch, dim]
@@ -314,7 +317,7 @@ class LlavaMetaForCausalLM(ABC):
             encoded_image_features = torch.split(encoded_image_features, split_sizes)
             image_features = []
             
-            print(f"video_idx_in_batch: {video_idx_in_batch}")
+            # print(f"video_idx_in_batch: {video_idx_in_batch}")
             for idx, image_feat in enumerate(encoded_image_features):
                 if idx in video_idx_in_batch:
                     # print(f"init_image_feat.shape: {image_feat.shape}")
@@ -350,10 +353,10 @@ class LlavaMetaForCausalLM(ABC):
                         # rank0_print("Video")
                         if mm_newline_position == "grid":
                             # Grid-wise
-                            print("******************************************")
-                            print(f"image_feature_bef: {image_feature.shape}")
+                            # print("******************************************")
+                            # print(f"image_feature_bef: {image_feature.shape}")
                             image_feature = self.add_token_per_grid(image_feature)
-                            print(f"image_feature_aft: {image_feature.shape}")
+                            # print(f"image_feature_aft: {image_feature.shape}")
                             if getattr(self.config, "add_faster_video", False):
                                 faster_video_feature = self.add_token_per_grid(all_faster_video_features[image_idx])
                                 # Add a token for each frame
@@ -369,7 +372,7 @@ class LlavaMetaForCausalLM(ABC):
 
                                 # print("!!!!!!!!!!!!")
 
-                            print(f"image_feautre_grid: {image_feature.shape}")
+                            # print(f"image_feautre_grid: {image_feature.shape}")
                             
                             new_image_features.append(image_feature)
                         elif mm_newline_position == "frame":
@@ -460,8 +463,8 @@ class LlavaMetaForCausalLM(ABC):
         else:
             image_features = self.encode_images(images)
             
-        print(f"=========== end ===========")
-        print(f"len: {len(image_features)} video1_shape: {image_features[0].shape} video2_shape: {image_features[1].shape}")
+        # print(f"=========== end ===========")
+        # print(f"len: {len(image_features)} video1_shape: {image_features[0].shape}")
         
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, "tune_mm_mlp_adapter", False) and getattr(self.config, "mm_use_im_start_end", False):
